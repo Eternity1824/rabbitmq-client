@@ -7,10 +7,12 @@
 #include <memory>
 #include <chrono>
 #include <future>
+#include <unordered_map>
 
 extern "C" {
 #include "core/message.h"
 #include "core/connection.h"
+#include "core/queue.h"
 }
 
 namespace rabbitmq {
@@ -22,11 +24,12 @@ class Message {
 private:
     ::Message* m_msg;
     bool m_owned;
+    uint64_t m_deliveryTag; // Added for acknowledgment
 
 public:
     Message(const std::string& exchange, const std::string& routingKey, 
             const void* body, size_t bodySize);
-    Message(::Message* msg, bool owned = true);
+    Message(::Message* msg, bool owned = true, uint64_t deliveryTag = 0);
     ~Message();
 
     // No copy constructor, only move semantics
@@ -43,6 +46,7 @@ public:
     uint32_t getPriority() const;
     uint64_t getExpiration() const;
     bool isPersistent() const;
+    uint64_t getDeliveryTag() const; // Added for acknowledgment
 
     // Setters
     void setPriority(uint32_t priority);
@@ -63,6 +67,7 @@ struct ConnectionOptions {
     std::string password = "guest";
     std::string vhost = "/";
     std::chrono::seconds timeout = std::chrono::seconds(30);
+    bool autoAck = false; // Added for acknowledgment control
 };
 
 /**
@@ -82,6 +87,8 @@ private:
     ::Connection* m_conn;
     std::shared_ptr<Consumer> m_consumer;
     void* m_context;
+    bool m_autoAck;
+    std::unordered_map<std::string, Queue*> m_queues; // Track queues for ack/reject
 
     static void onMessageCallback(void* context, ::Message* message);
     static void onConnectCallback(void* context);
@@ -120,8 +127,12 @@ public:
     void consume(const std::string& queueName, std::shared_ptr<Consumer> consumer);
     std::future<Message> get(const std::string& queueName, 
                              std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
+    
+    // Message acknowledgment operations
+    void ack(const Message& message);
+    void reject(const Message& message, bool requeue = true);
 };
 
 } // namespace rabbitmq
 
-#endif /* CLIENT_HPP */ 
+#endif /* CLIENT_HPP */

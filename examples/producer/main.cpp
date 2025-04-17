@@ -14,11 +14,10 @@ int main(int argc, char* argv[]) {
     uint16_t port = 5672;
     std::string exchange = "amq.direct";
     std::string routingKey = "test";
-    
-    if (argc > 1) host = argv[1];
-    if (argc > 2) port = static_cast<uint16_t>(std::stoi(argv[2]));
-    if (argc > 3) exchange = argv[3];
-    if (argc > 4) routingKey = argv[4];
+    // if (argc > 1) host = argv[1];
+    // if (argc > 2) port = static_cast<uint16_t>(std::stoi(argv[2]));
+    // if (argc > 3) exchange = argv[3];
+    // if (argc > 4) routingKey = argv[4];
     
     try {
         // Create connection options

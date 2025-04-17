@@ -1,84 +1,123 @@
-# RabbitMQ简易客户端实现
+# Simple RabbitMQ Client Implementation
 
-这是一个简化版的RabbitMQ客户端实现，包含基础的消息队列功能，使用C/C++混合结构开发。
+This is a simplified RabbitMQ client implementation with basic message queue functionality, developed using a hybrid C/C++ structure.
 
-## 项目结构
+## Project Structure
 
 ```
-├── common/       # 公共定义
-├── broker/       # Broker相关
-├── network/      # 网络通信
-├── storage/      # 持久化存储
-├── src/          # 源代码
-│   ├── common/   # 公共实现
-│   ├── broker/   # Broker实现
-│   ├── network/  # 网络实现
-│   └── storage/  # 存储实现
-├── examples/     # 示例代码
-│   ├── producer/ # 生产者示例
-│   └── consumer/ # 消费者示例
-└── tests/        # 测试代码
-    ├── unit/     # 单元测试
-    └── integration/ # 集成测试
+├── Makefile           # Project build script
+├── README.md          # Project documentation
+├── architecture.md    # Architecture diagram and description
+│
+├── include/           # Header files
+│   ├── core/          # Core component headers
+│   │   ├── broker.h   # Broker interface
+│   │   ├── connection.h # Connection management interface
+│   │   ├── log.h      # Logging system
+│   │   ├── message.h  # Message structure definition
+│   │   └── queue.h    # Thread-safe queue interface
+│   └── wrapper/       # C++ wrapper headers
+│       └── client.hpp # C++ client interface
+│
+├── src/               # Source code
+│   ├── broker/        # Broker implementation
+│   │   └── main.c     # Broker main program
+│   ├── core/          # Core components implementation
+│   │   ├── broker.c   # Broker component implementation
+│   │   ├── connection.c # Connection management implementation
+│   │   ├── log.c      # Logging system implementation
+│   │   ├── message.c  # Message structure implementation
+│   │   └── queue.c    # Thread-safe queue implementation
+│   └── wrapper/       # C++ wrapper implementation
+│       └── client.cpp # C++ client interface implementation
+│
+├── examples/          # Example code
+│   ├── consumer/      # Consumer examples
+│   │   └── ack_consumer.cpp # Consumer with acknowledgment
+│   └── producer/      # Producer examples
+│       └── main.cpp   # Producer example
+│
+├── bin/               # Compiled binaries
+└── obj/               # Object files
 ```
 
-## 功能特性
+## Features
 
-- 消息结构体定义（C语言）
-- 线程安全队列/链表（C语言，使用pthread）
-- Broker管理主循环（C语言，select/epoll控制）
-- CLI命令接口（C语言，基本交互）
-- C++接口封装（提供现代C++风格API）
-- 实现了最基本的消息发送和接收功能
+- Message structure definition (C language)
+- Thread-safe queue implementation (C language, using pthread)
+- Broker management with TCP socket support (C language)
+- Exchange types: Direct, Fanout, and Topic
+- Message acknowledgment (ACK) support for reliable delivery
+- C++ interface wrapper (providing modern C++ style API)
+- Consumer registration protocol
 
-## 编译方法
+## Compilation
 
-使用make编译项目：
+Compile the project using make:
 
 ```bash
 make all
 ```
 
-清理编译产物：
+Clean build artifacts:
 
 ```bash
 make clean
 ```
 
-## 使用示例
+## Usage Examples
 
-### 启动Broker
+### Start the Broker
 
 ```bash
-./bin/broker -p 5672
+# Start with default settings (port 5672)
+./bin/broker
+
+# Or specify a custom port
+./bin/broker -p 5673
+
+# For more options
+./bin/broker --help
 ```
 
-### 运行生产者
+### Run a Consumer with Acknowledgment
 
 ```bash
+# Connect to local broker on default port
+./bin/ack_consumer
+
+# Or specify host and port
+./bin/ack_consumer localhost 5672 test
+```
+
+### Run a Producer
+
+```bash
+# Connect to local broker on default port
+./bin/producer
+
+# Or specify host and port
 ./bin/producer localhost 5672 amq.direct test
 ```
 
-### 运行消费者
+## Implemented Features
 
-```bash
-./bin/consumer localhost 5672 test
-```
+- **Message Passing**: Basic message sending and receiving functionality
+- **Queue Management**: Thread-safe queue operations with mutex and condition variables
+- **Exchange Types**: Support for Direct, Fanout, and Topic exchange types
+- **Thread Safety**: Using mutexes and condition variables to ensure thread safety
+- **Message Acknowledgment**: Support for manual and automatic message acknowledgment
+- **Consumer Registration Protocol**: Simple protocol for consumers to register with queues
+- **TCP Network Layer**: Socket-based network communication between components
 
-## 实现的特性
+## Unimplemented Features
 
-- **消息传递**：基本的消息发送和接收功能
-- **队列管理**：创建、绑定、解绑队列
-- **交换机类型**：支持Direct、Fanout和Topic三种类型
-- **线程安全**：使用互斥锁和条件变量保证线程安全
+- **Persistent Storage**: Message persistence to disk not implemented
+- **Cluster Support**: Only single-node mode supported
+- **Advanced Features**: Delayed queues, priority queues, and other advanced features not implemented
+- **Complete AMQP Protocol**: Full AMQP protocol specification not implemented
+- **Comprehensive Testing**: Unit and integration tests not fully implemented
 
-## 未实现的功能
+## Contribution
 
-- 持久化存储：未实现消息持久化到磁盘
-- 集群支持：仅支持单机模式
-- 高级特性：未实现延迟队列、优先队列等高级特性
-- 完整的AMQP协议：未实现完整的AMQP协议规范
-
-## 贡献
-
-欢迎提交Issues和Pull Requests来改进这个项目。 
+Issues and Pull Requests are welcome to improve this project.

@@ -16,7 +16,7 @@ CORE_C_SOURCES = $(wildcard $(SRC_DIR)/core/*.c)
 WRAPPER_CXX_SOURCES = $(wildcard $(SRC_DIR)/wrapper/*.cpp)
 BROKER_MAIN = $(SRC_DIR)/broker/main.c
 PRODUCER_SRC = $(EXAMPLES_DIR)/producer/main.cpp
-CONSUMER_SRC = $(EXAMPLES_DIR)/consumer/main.cpp
+CONSUMER_SRC = $(EXAMPLES_DIR)/consumer/ack_consumer.cpp
 
 # 目标文件
 CORE_C_OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(CORE_C_SOURCES))
@@ -24,12 +24,12 @@ WRAPPER_CXX_OBJECTS = $(patsubst $(SRC_DIR)/%.cpp, $(OBJ_DIR)/%.o, $(WRAPPER_CXX
 CORE_OBJECTS = $(CORE_C_OBJECTS) $(WRAPPER_CXX_OBJECTS)
 BROKER_OBJ = $(OBJ_DIR)/broker/main.o
 PRODUCER_OBJ = $(OBJ_DIR)/examples/producer/main.o
-CONSUMER_OBJ = $(OBJ_DIR)/examples/consumer/main.o
+CONSUMER_OBJ = $(OBJ_DIR)/examples/consumer/ack_consumer.o
 
 # 可执行文件
 BROKER = $(BIN_DIR)/broker
 PRODUCER = $(BIN_DIR)/producer
-CONSUMER = $(BIN_DIR)/consumer
+CONSUMER = $(BIN_DIR)/ack_consumer
 
 # 默认目标
 all: dirs $(BROKER) $(PRODUCER) $(CONSUMER)

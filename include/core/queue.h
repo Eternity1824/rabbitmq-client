@@ -4,11 +4,31 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <time.h>
 #include "core/message.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * Message delivery status
+ */
+typedef enum {
+    MESSAGE_STATUS_READY,       // Message is ready to be delivered
+    MESSAGE_STATUS_DELIVERED,   // Message has been delivered but not acknowledged
+    MESSAGE_STATUS_ACKNOWLEDGED // Message has been acknowledged
+} MessageStatus;
+
+/**
+ * Structure to track message delivery status
+ */
+typedef struct DeliveryInfo {
+    Message* message;           // Pointer to the message
+    uint64_t delivery_tag;     // Unique delivery tag
+    time_t delivery_time;      // Time when the message was delivered
+    MessageStatus status;      // Current status of the message
+} DeliveryInfo;
 
 /**
  * Queue structure for managing messages
@@ -24,6 +44,12 @@ typedef struct Queue {
     pthread_cond_t not_empty;    // Condition for waiting when queue is empty
     pthread_cond_t not_full;     // Condition for waiting when queue is full
     uint8_t durable;             // Whether queue persists after restart
+    
+    // For message acknowledgment
+    DeliveryInfo* unacked_messages; // Array of unacknowledged messages
+    size_t unacked_capacity;     // Capacity of unacked_messages array
+    size_t unacked_count;        // Number of unacknowledged messages
+    uint64_t next_delivery_tag;  // Next delivery tag to assign
 } Queue;
 
 /**
@@ -43,8 +69,10 @@ int queue_enqueue(Queue* queue, Message* message);
 
 /**
  * Dequeue a message (blocks if queue is empty)
+ * With acknowledgment enabled, the message is not removed from the queue
+ * until it is acknowledged with queue_ack
  */
-Message* queue_dequeue(Queue* queue);
+Message* queue_dequeue(Queue* queue, uint64_t* delivery_tag);
 
 /**
  * Try to enqueue a message (non-blocking)
@@ -55,8 +83,30 @@ int queue_try_enqueue(Queue* queue, Message* message);
 /**
  * Try to dequeue a message (non-blocking)
  * Returns message on success, NULL if queue is empty
+ * With acknowledgment enabled, the message is not removed from the queue
+ * until it is acknowledged with queue_ack
  */
-Message* queue_try_dequeue(Queue* queue);
+Message* queue_try_dequeue(Queue* queue, uint64_t* delivery_tag);
+
+/**
+ * Acknowledge a message with the given delivery tag
+ * Returns 1 on success, 0 if the delivery tag is not found
+ */
+int queue_ack(Queue* queue, uint64_t delivery_tag);
+
+/**
+ * Reject a message with the given delivery tag
+ * If requeue is 1, the message will be requeued
+ * Returns 1 on success, 0 if the delivery tag is not found
+ */
+int queue_reject(Queue* queue, uint64_t delivery_tag, int requeue);
+
+/**
+ * Process unacknowledged messages that have timed out
+ * Requeues messages that have been delivered but not acknowledged
+ * within the timeout period (in seconds)
+ */
+void queue_process_timeouts(Queue* queue, int timeout_seconds);
 
 /**
  * Get current queue size
@@ -72,4 +122,4 @@ void queue_set_durable(Queue* queue, uint8_t durable);
 }
 #endif
 
-#endif /* QUEUE_H */ 
+#endif /* QUEUE_H */

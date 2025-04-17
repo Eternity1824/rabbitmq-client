@@ -20,8 +20,8 @@
 
 // Forward declarations
 static void* connection_receiver_thread(void* arg);
-static int send_message_data(int socket_fd, const Message* message);
-static Message* receive_message_data(int socket_fd);
+Message* receive_message_data(int socket_fd);
+int send_message_data(int socket_fd, const Message* message);
 
 Connection* connection_create(const char* host, uint16_t port) {
     if (!host) {
@@ -359,7 +359,7 @@ static void* connection_receiver_thread(void* arg) {
 }
 
 // Send a message over a socket
-static int send_message_data(int socket_fd, const Message* message) {
+int send_message_data(int socket_fd, const Message* message) {
     if (socket_fd < 0 || !message) {
         return 0;
     }
@@ -416,7 +416,7 @@ static int send_message_data(int socket_fd, const Message* message) {
 }
 
 // Receive a message from a socket
-static Message* receive_message_data(int socket_fd) {
+Message* receive_message_data(int socket_fd) {
     if (socket_fd < 0) {
         return NULL;
     }

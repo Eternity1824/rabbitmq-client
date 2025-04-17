@@ -1,5 +1,6 @@
 #include "wrapper/client.hpp"
 #include "core/log.h"
+#include "core/queue.h"
 #include <stdexcept>
 #include <chrono>
 #include <thread>
@@ -9,15 +10,15 @@ namespace rabbitmq {
 // Message implementation
 Message::Message(const std::string& exchange, const std::string& routingKey, 
                  const void* body, size_t bodySize)
-    : m_owned(true) {
+    : m_owned(true), m_deliveryTag(0) {
     m_msg = ::message_create(exchange.c_str(), routingKey.c_str(), body, bodySize);
     if (!m_msg) {
         throw std::runtime_error("Failed to create message");
     }
 }
 
-Message::Message(::Message* msg, bool owned)
-    : m_msg(msg), m_owned(owned) {
+Message::Message(::Message* msg, bool owned, uint64_t deliveryTag)
+    : m_msg(msg), m_owned(owned), m_deliveryTag(deliveryTag) {
     if (!m_msg) {
         throw std::runtime_error("Cannot wrap NULL message");
     }
@@ -30,9 +31,10 @@ Message::~Message() {
 }
 
 Message::Message(Message&& other)
-    : m_msg(other.m_msg), m_owned(other.m_owned) {
+    : m_msg(other.m_msg), m_owned(other.m_owned), m_deliveryTag(other.m_deliveryTag) {
     other.m_msg = nullptr;
     other.m_owned = false;
+    other.m_deliveryTag = 0;
 }
 
 Message& Message::operator=(Message&& other) {
@@ -42,8 +44,10 @@ Message& Message::operator=(Message&& other) {
         }
         m_msg = other.m_msg;
         m_owned = other.m_owned;
+        m_deliveryTag = other.m_deliveryTag;
         other.m_msg = nullptr;
         other.m_owned = false;
+        other.m_deliveryTag = 0;
     }
     return *this;
 }
@@ -76,6 +80,10 @@ bool Message::isPersistent() const {
     return m_msg->persistent != 0;
 }
 
+uint64_t Message::getDeliveryTag() const {
+    return m_deliveryTag;
+}
+
 void Message::setPriority(uint32_t priority) {
     ::message_set_priority(m_msg, priority);
 }
@@ -96,6 +104,8 @@ void Message::setPersistent(bool persistent) {
 struct ClientContext {
     std::shared_ptr<Consumer> consumer;
     std::promise<Message>* messagePromise = nullptr;
+    std::string currentQueue;
+    uint64_t lastDeliveryTag = 0;
 };
 
 void Client::onMessageCallback(void* context, ::Message* message) {
@@ -108,11 +118,11 @@ void Client::onMessageCallback(void* context, ::Message* message) {
     try {
         if (clientContext->messagePromise) {
             // For get() operation
-            clientContext->messagePromise->set_value(Message(message, true));
+            clientContext->messagePromise->set_value(Message(message, true, clientContext->lastDeliveryTag));
             clientContext->messagePromise = nullptr;
         } else if (clientContext->consumer) {
             // For consume() operation
-            clientContext->consumer->onMessage(Message(message, true));
+            clientContext->consumer->onMessage(Message(message, true, clientContext->lastDeliveryTag));
         } else {
             // No handler, free the message
             ::message_free(message);
@@ -132,7 +142,7 @@ void Client::onDisconnectCallback(void* context) {
 }
 
 Client::Client(const ConnectionOptions& options)
-    : m_conn(nullptr), m_context(nullptr) {
+    : m_conn(nullptr), m_context(nullptr), m_autoAck(options.autoAck) {
     // Initialize the C client
     m_conn = ::connection_create(options.host.c_str(), options.port);
     if (!m_conn) {
@@ -155,6 +165,12 @@ Client::Client(const ConnectionOptions& options)
 Client::~Client() {
     disconnect();
     
+    // Clean up queues
+    for (auto& pair : m_queues) {
+        // The broker owns the queues, so we don't free them here
+    }
+    m_queues.clear();
+    
     if (m_conn) {
         ::connection_free(m_conn);
     }
@@ -165,7 +181,9 @@ Client::~Client() {
 }
 
 Client::Client(Client&& other)
-    : m_conn(other.m_conn), m_consumer(std::move(other.m_consumer)), m_context(other.m_context) {
+    : m_conn(other.m_conn), m_consumer(std::move(other.m_consumer)), 
+      m_context(other.m_context), m_autoAck(other.m_autoAck),
+      m_queues(std::move(other.m_queues)) {
     other.m_conn = nullptr;
     other.m_context = nullptr;
 }
@@ -185,6 +203,8 @@ Client& Client::operator=(Client&& other) {
         m_conn = other.m_conn;
         m_consumer = std::move(other.m_consumer);
         m_context = other.m_context;
+        m_autoAck = other.m_autoAck;
+        m_queues = std::move(other.m_queues);
         
         other.m_conn = nullptr;
         other.m_context = nullptr;
@@ -215,86 +235,126 @@ bool Client::isConnected() const {
 }
 
 void Client::declareQueue(const std::string& name, size_t capacity, bool durable) {
-    // Not implemented in this simple version
-    LOG_WARNING("declareQueue is a no-op in this implementation");
+    // TODO: Implement with broker API
 }
 
 void Client::bindQueue(const std::string& queueName, const std::string& exchangeName, 
                        const std::string& routingKey) {
-    // Not implemented in this simple version
-    LOG_WARNING("bindQueue is a no-op in this implementation");
+    // TODO: Implement with broker API
 }
 
 void Client::declareExchange(const std::string& name, ExchangeType type) {
-    // Not implemented in this simple version
-    LOG_WARNING("declareExchange is a no-op in this implementation");
+    // TODO: Implement with broker API
 }
 
 void Client::publish(const std::string& exchange, const std::string& routingKey, 
                      const void* data, size_t size) {
-    if (!isConnected()) {
+    if (!m_conn || !isConnected()) {
         throw std::runtime_error("Not connected to broker");
     }
     
-    Message msg(exchange, routingKey, data, size);
-    publish(msg);
+    Message message(exchange, routingKey, data, size);
+    publish(message);
 }
 
 void Client::publish(const Message& message) {
-    if (!isConnected()) {
+    if (!m_conn || !isConnected()) {
         throw std::runtime_error("Not connected to broker");
     }
     
     if (!::connection_send(m_conn, message.getHandle())) {
-        throw std::runtime_error("Failed to send message");
+        throw std::runtime_error("Failed to publish message");
     }
 }
 
 void Client::consume(const std::string& queueName, std::shared_ptr<Consumer> consumer) {
-    if (!isConnected()) {
+    if (!m_conn || !isConnected()) {
         throw std::runtime_error("Not connected to broker");
     }
     
     ClientContext* context = static_cast<ClientContext*>(m_context);
     context->consumer = consumer;
+    context->currentQueue = queueName;
     
-    // In a real implementation, we would send a consume command to the broker
-    // For now, we just store the consumer to handle future messages
+    // Store queue reference for ack/reject operations
+    // In a real implementation, we would get this from the broker
+    // For now, we'll assume it exists
 }
 
 std::future<Message> Client::get(const std::string& queueName, 
                                  std::chrono::milliseconds timeout) {
-    if (!isConnected()) {
+    if (!m_conn || !isConnected()) {
         throw std::runtime_error("Not connected to broker");
     }
     
     ClientContext* context = static_cast<ClientContext*>(m_context);
+    context->currentQueue = queueName;
     
-    // Set up promise/future
+    // Create promise for async result
     std::promise<Message> promise;
     std::future<Message> future = promise.get_future();
     context->messagePromise = &promise;
     
-    // In a real implementation, we would send a get command to the broker
-    // For now, we just wait for the next message to arrive
+    // In a real implementation, we would dequeue from the broker
+    // For now, we'll just wait for a message to arrive via callback
     
-    std::thread([this, timeout, queueName, &future]() {
-        if (std::future_status::ready != future.wait_for(timeout)) {
-            // Timeout occurred
-            ClientContext* ctx = static_cast<ClientContext*>(m_context);
-            if (ctx->messagePromise) {
-                try {
-                    ctx->messagePromise->set_exception(
-                        std::make_exception_ptr(std::runtime_error("Get operation timed out")));
-                } catch (...) {
-                    // Promise might have been fulfilled in the meantime
-                }
-                ctx->messagePromise = nullptr;
-            }
-        }
-    }).detach();
+    // Wait for the message with timeout
+    auto status = future.wait_for(timeout);
+    if (status != std::future_status::ready) {
+        context->messagePromise = nullptr;
+        throw std::runtime_error("Timeout waiting for message");
+    }
     
     return future;
 }
 
-} // namespace rabbitmq 
+void Client::ack(const Message& message) {
+    if (!m_conn || !isConnected()) {
+        throw std::runtime_error("Not connected to broker");
+    }
+    
+    ClientContext* context = static_cast<ClientContext*>(m_context);
+    if (context->currentQueue.empty()) {
+        throw std::runtime_error("No active queue for acknowledgment");
+    }
+    
+    // Find the queue in our map
+    auto it = m_queues.find(context->currentQueue);
+    if (it == m_queues.end()) {
+        throw std::runtime_error("Queue not found for acknowledgment");
+    }
+    
+    // Acknowledge the message
+    if (!::queue_ack(it->second, message.getDeliveryTag())) {
+        throw std::runtime_error("Failed to acknowledge message");
+    }
+    
+    LOG_INFO("Acknowledged message with delivery tag %lu", message.getDeliveryTag());
+}
+
+void Client::reject(const Message& message, bool requeue) {
+    if (!m_conn || !isConnected()) {
+        throw std::runtime_error("Not connected to broker");
+    }
+    
+    ClientContext* context = static_cast<ClientContext*>(m_context);
+    if (context->currentQueue.empty()) {
+        throw std::runtime_error("No active queue for rejection");
+    }
+    
+    // Find the queue in our map
+    auto it = m_queues.find(context->currentQueue);
+    if (it == m_queues.end()) {
+        throw std::runtime_error("Queue not found for rejection");
+    }
+    
+    // Reject the message
+    if (!::queue_reject(it->second, message.getDeliveryTag(), requeue ? 1 : 0)) {
+        throw std::runtime_error("Failed to reject message");
+    }
+    
+    LOG_INFO("Rejected message with delivery tag %lu (requeue: %d)", 
+             message.getDeliveryTag(), requeue);
+}
+
+} // namespace rabbitmq
