@@ -2,6 +2,11 @@
 
 This is a simplified RabbitMQ client implementation with basic message queue functionality, developed using a hybrid C/C++ structure.
 
+Group member:
+- Lihan Zhou
+- Yuchen Huang
+- Yifan Tian
+
 ## Project Structure
 
 ```
